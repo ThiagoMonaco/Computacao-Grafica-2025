@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <assert.h>
+#include <vector>
 
 using namespace std;
 
@@ -41,13 +42,19 @@ GLuint loadTexture(string filePath, int &width, int &height);
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 800, HEIGHT = 600;
+const int NUM_CUBES = 3;
 
-// Variáveis de controle do cubo
-vec3 cubePosition = vec3(0.0f, 0.0f, 0.0f);
-float cubeScale = 1.0f;
-float rotationX = 0.0f;
-float rotationY = 0.0f;
-float rotationZ = 0.0f;
+// Variáveis de controle dos cubos
+struct Cube {
+    vec3 position;
+    float scale;
+    float rotationX;
+    float rotationY;
+    float rotationZ;
+};
+
+std::vector<Cube> cubes;
+int currentCube = 0;
 bool useTexture = false;
 
 // Código fonte do Vertex Shader (em GLSL): ainda hardcoded
@@ -153,8 +160,18 @@ int main()
 	mat4 projection = perspective(radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
 	glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, value_ptr(projection));
 
-	// Ajusta a posição inicial do cubo para ser visível
-	cubePosition = vec3(0.0f, 0.0f, -5.0f);
+	// Inicializa os cubos
+	cubes.resize(NUM_CUBES);
+	cubes[0].position = vec3(-2.0f, 0.0f, -5.0f);
+	cubes[1].position = vec3(0.0f, 0.0f, -5.0f);
+	cubes[2].position = vec3(2.0f, 0.0f, -5.0f);
+	
+	for(int i = 0; i < NUM_CUBES; i++) {
+		cubes[i].scale = 1.0f;
+		cubes[i].rotationX = 0.0f;
+		cubes[i].rotationY = 0.0f;
+		cubes[i].rotationZ = 0.0f;
+	}
 
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
@@ -172,19 +189,22 @@ int main()
 		// Habilita teste de profundidade
 		glEnable(GL_DEPTH_TEST);
 
-		// Matriz de modelo: transformações na geometria (objeto)
-		mat4 model = mat4(1); // matriz identidade
-		model = translate(model, cubePosition);
-		model = rotate(model, radians(rotationX), vec3(1.0f, 0.0f, 0.0f));
-		model = rotate(model, radians(rotationY), vec3(0.0f, 1.0f, 0.0f));
-		model = rotate(model, radians(rotationZ), vec3(0.0f, 0.0f, 1.0f));
-		model = scale(model, vec3(cubeScale));
-		
-		glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1i(glGetUniformLocation(shaderID, "useTexture"), useTexture);
+		// Desenha cada cubo
+		for(int i = 0; i < NUM_CUBES; i++) {
+			// Matriz de modelo: transformações na geometria (objeto)
+			mat4 model = mat4(1); // matriz identidade
+			model = translate(model, cubes[i].position);
+			model = rotate(model, radians(cubes[i].rotationX), vec3(1.0f, 0.0f, 0.0f));
+			model = rotate(model, radians(cubes[i].rotationY), vec3(0.0f, 1.0f, 0.0f));
+			model = rotate(model, radians(cubes[i].rotationZ), vec3(0.0f, 0.0f, 1.0f));
+			model = scale(model, vec3(cubes[i].scale));
+			
+			glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
+			glUniform1i(glGetUniformLocation(shaderID, "useTexture"), useTexture);
 
-		// Desenha o cubo
-		glDrawArrays(GL_TRIANGLES, 0, 36);
+			// Desenha o cubo
+			glDrawArrays(GL_TRIANGLES, 0, 36);
+		}
 
 		glBindVertexArray(0); // Desconectando o buffer de geometria
 
@@ -212,33 +232,41 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
 	if (action == GLFW_PRESS || action == GLFW_REPEAT)
 	{
+		// Seleciona o cubo atual (teclas 1, 2, 3)
+		if (key == GLFW_KEY_1)
+			currentCube = 0;
+		if (key == GLFW_KEY_2)
+			currentCube = 1;
+		if (key == GLFW_KEY_3)
+			currentCube = 2;
+
 		// Controles de movimento
 		if (key == GLFW_KEY_W)
-			cubePosition.z -= moveSpeed;
+			cubes[currentCube].position.z -= moveSpeed;
 		if (key == GLFW_KEY_S)
-			cubePosition.z += moveSpeed;
+			cubes[currentCube].position.z += moveSpeed;
 		if (key == GLFW_KEY_A)
-			cubePosition.x -= moveSpeed;
+			cubes[currentCube].position.x -= moveSpeed;
 		if (key == GLFW_KEY_D)
-			cubePosition.x += moveSpeed;
+			cubes[currentCube].position.x += moveSpeed;
 		if (key == GLFW_KEY_I)
-			cubePosition.y += moveSpeed;
+			cubes[currentCube].position.y += moveSpeed;
 		if (key == GLFW_KEY_J)
-			cubePosition.y -= moveSpeed;
+			cubes[currentCube].position.y -= moveSpeed;
 
 		// Controles de rotação
 		if (key == GLFW_KEY_X)
-			rotationX += rotateSpeed;
+			cubes[currentCube].rotationX += rotateSpeed;
 		if (key == GLFW_KEY_Y)
-			rotationY += rotateSpeed;
+			cubes[currentCube].rotationY += rotateSpeed;
 		if (key == GLFW_KEY_Z)
-			rotationZ += rotateSpeed;
+			cubes[currentCube].rotationZ += rotateSpeed;
 
 		// Controles de escala
 		if (key == GLFW_KEY_LEFT_BRACKET)
-			cubeScale = std::max(0.1f, cubeScale - scaleSpeed);
+			cubes[currentCube].scale = std::max(0.1f, cubes[currentCube].scale - scaleSpeed);
 		if (key == GLFW_KEY_RIGHT_BRACKET)
-			cubeScale += scaleSpeed;
+			cubes[currentCube].scale += scaleSpeed;
 
 		// Alternar textura
 		if (key == GLFW_KEY_T)
