@@ -39,34 +39,52 @@ int setupShader();
 int setupGeometry();
 GLuint loadTexture(string filePath, int &width, int &height);
 
-void drawTriangle(GLuint shaderID, GLuint VAO, vec3 position, vec3 dimensions, float angle, vec3 color, vec3 axis = (vec3(0.0, 0.0, 1.0)));
-
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 800, HEIGHT = 600;
+
+// Variáveis de controle do cubo
+vec3 cubePosition = vec3(0.0f, 0.0f, 0.0f);
+float cubeScale = 1.0f;
+float rotationX = 0.0f;
+float rotationY = 0.0f;
+float rotationZ = 0.0f;
+bool useTexture = false;
 
 // Código fonte do Vertex Shader (em GLSL): ainda hardcoded
 const GLchar *vertexShaderSource = R"(
 #version 400
 layout (location = 0) in vec3 position;
-layout (location = 1) in vec2 texc;
+layout (location = 1) in vec3 color;
+layout (location = 2) in vec2 texc;
 uniform mat4 projection;
 uniform mat4 model;
+out vec3 finalColor;
 out vec2 texCoord;
 void main()
 {
-   	gl_Position = projection * model * vec4(position.x, position.y, position.z, 1.0);
+   	gl_Position = projection * model * vec4(position, 1.0);
+	finalColor = color;
 	texCoord = texc;
 })";
 
 // Código fonte do Fragment Shader (em GLSL): ainda hardcoded
 const GLchar *fragmentShaderSource = R"(
 #version 400
+in vec3 finalColor;
 in vec2 texCoord;
 uniform sampler2D texBuff;
+uniform bool useTexture;
 out vec4 color;
 void main()
 {
-	color = texture(texBuff,texCoord);
+	if(useTexture)
+	{
+		color = texture(texBuff, texCoord);
+	}
+	else
+	{
+		color = vec4(finalColor, 1.0);
+	}
 })";
 
 // Função MAIN
@@ -131,14 +149,12 @@ int main()
 	glActiveTexture(GL_TEXTURE0);
 	
 
-	// Matriz de projeção paralela ortográfica
-	// mat4 projection = ortho(-10.0, 10.0, -10.0, 10.0, -1.0, 1.0);
-	mat4 projection = ortho(0.0, 800.0, 0.0, 600.0, -1.0, 1.0);
+	// Matriz de projeção perspectiva
+	mat4 projection = perspective(radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
 	glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, value_ptr(projection));
 
-	// Matriz de modelo: transformações na geometria (objeto)
-	mat4 model = mat4(1); // matriz identidade
-	glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
+	// Ajusta a posição inicial do cubo para ser visível
+	cubePosition = vec3(0.0f, 0.0f, -5.0f);
 
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
@@ -148,19 +164,27 @@ int main()
 
 		// Limpa o buffer de cor
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // cor de fundo
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glBindVertexArray(VAO); // Conectando ao buffer de geometria
 		glBindTexture(GL_TEXTURE_2D, texID); //conectando com o buffer de textura que será usado no draw
 
-		// Primeiro Triângulo
-		drawTriangle(shaderID, VAO, vec3(100.0, 500.0, 0.0), vec3(100.0, 100.0, 1.0), 0.0, vec3(0.0, 0.0, 1.0));
+		// Habilita teste de profundidade
+		glEnable(GL_DEPTH_TEST);
 
-		// Segundo Triângulo
-		drawTriangle(shaderID, VAO, vec3(350.0, 300.0, 0.0), vec3(200.0, 200.0, 1.0), 180.0, vec3(0.0, 1.0, 0.0));
+		// Matriz de modelo: transformações na geometria (objeto)
+		mat4 model = mat4(1); // matriz identidade
+		model = translate(model, cubePosition);
+		model = rotate(model, radians(rotationX), vec3(1.0f, 0.0f, 0.0f));
+		model = rotate(model, radians(rotationY), vec3(0.0f, 1.0f, 0.0f));
+		model = rotate(model, radians(rotationZ), vec3(0.0f, 0.0f, 1.0f));
+		model = scale(model, vec3(cubeScale));
+		
+		glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1i(glGetUniformLocation(shaderID, "useTexture"), useTexture);
 
-		// Terceiro Triângulo
-		drawTriangle(shaderID, VAO, vec3(600.0, 200.0, 0.0), vec3(300.0, 300.0, 1.0), 0.0, vec3(1.0, 0.0, 0.0));
+		// Desenha o cubo
+		glDrawArrays(GL_TRIANGLES, 0, 36);
 
 		glBindVertexArray(0); // Desconectando o buffer de geometria
 
@@ -181,6 +205,45 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, GL_TRUE);
+
+	const float moveSpeed = 0.1f;
+	const float rotateSpeed = 5.0f;
+	const float scaleSpeed = 0.1f;
+
+	if (action == GLFW_PRESS || action == GLFW_REPEAT)
+	{
+		// Controles de movimento
+		if (key == GLFW_KEY_W)
+			cubePosition.z -= moveSpeed;
+		if (key == GLFW_KEY_S)
+			cubePosition.z += moveSpeed;
+		if (key == GLFW_KEY_A)
+			cubePosition.x -= moveSpeed;
+		if (key == GLFW_KEY_D)
+			cubePosition.x += moveSpeed;
+		if (key == GLFW_KEY_I)
+			cubePosition.y += moveSpeed;
+		if (key == GLFW_KEY_J)
+			cubePosition.y -= moveSpeed;
+
+		// Controles de rotação
+		if (key == GLFW_KEY_X)
+			rotationX += rotateSpeed;
+		if (key == GLFW_KEY_Y)
+			rotationY += rotateSpeed;
+		if (key == GLFW_KEY_Z)
+			rotationZ += rotateSpeed;
+
+		// Controles de escala
+		if (key == GLFW_KEY_LEFT_BRACKET)
+			cubeScale = std::max(0.1f, cubeScale - scaleSpeed);
+		if (key == GLFW_KEY_RIGHT_BRACKET)
+			cubeScale += scaleSpeed;
+
+		// Alternar textura
+		if (key == GLFW_KEY_T)
+			useTexture = !useTexture;
+	}
 }
 
 // Esta função está basntante hardcoded - objetivo é compilar e "buildar" um programa de
@@ -242,16 +305,58 @@ int setupShader()
 // A função retorna o identificador do VAO
 int setupGeometry()
 {
-	// Aqui setamos as coordenadas x, y e z do triângulo e as armazenamos de forma
+	// Aqui setamos as coordenadas x, y e z do cubo e as armazenamos de forma
 	// sequencial, já visando mandar para o VBO (Vertex Buffer Objects)
 	// Cada atributo do vértice (coordenada, cores, coordenadas de textura, normal, etc)
 	// Pode ser arazenado em um VBO único ou em VBOs separados
 	GLfloat vertices[] = {
-		// x    y    z   s    t 
-		// T0
-		-0.5, -0.5, 0.0, 0.0, 0.0,    // v0
-		 0.5, -0.5, 0.0, 1.0, 0.0,    // v1
-		 0.0,  0.5, 0.0, 0.5, 1.0  	  // v2
+		// Face frontal (vermelha)
+		-0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,  // v0
+		 0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,  // v1
+		 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,  // v2
+		-0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,  // v0
+		 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,  // v2
+		-0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,  // v3
+
+		// Face traseira (verde)
+		-0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,  // v4
+		-0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,  // v5
+		 0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,  // v6
+		-0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,  // v4
+		 0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,  // v6
+		 0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,  // v7
+
+		// Face superior (azul)
+		-0.5f,  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // v8
+		-0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,  // v9
+		 0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,  // v10
+		-0.5f,  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // v8
+		 0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,  // v10
+		 0.5f,  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,  // v11
+
+		// Face inferior (amarela)
+		-0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,  // v12
+		 0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f,  // v13
+		 0.5f, -0.5f,  0.5f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  // v14
+		-0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,  // v12
+		 0.5f, -0.5f,  0.5f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  // v14
+		-0.5f, -0.5f,  0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f,  // v15
+
+		// Face direita (magenta)
+		 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // v16
+		 0.5f,  0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f,  // v17
+		 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,  // v18
+		 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // v16
+		 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,  // v18
+		 0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f,  // v19
+
+		// Face esquerda (ciano)
+		-0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f,  // v20
+		-0.5f, -0.5f,  0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f,  // v21
+		-0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f,  // v22
+		-0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f,  // v20
+		-0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f,  // v22
+		-0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f   // v23
 	};
 
 	GLuint VBO, VAO;
@@ -267,21 +372,18 @@ int setupGeometry()
 	// Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
 	// e os ponteiros para os atributos
 	glBindVertexArray(VAO);
-	// Para cada atributo do vertice, criamos um "AttribPointer" (ponteiro para o atributo), indicando:
-	//  Localização no shader * (a localização dos atributos devem ser correspondentes no layout especificado no vertex shader)
-	//  Numero de valores que o atributo tem (por ex, 3 coordenadas xyz)
-	//  Tipo do dado
-	//  Se está normalizado (entre zero e um)
-	//  Tamanho em bytes
-	//  Deslocamento a partir do byte zero
 
-	//Atributo posição - coord x, y, z - 3 valores
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid *)0);
+	//Atributo posição (x, y, z)
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)0);
 	glEnableVertexAttribArray(0);
 
-	//Atributo coordenada de textura - coord s, t - 2 valores
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid *)(3* sizeof(GLfloat)));
+	//Atributo cor (r, g, b)
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
 	glEnableVertexAttribArray(1);
+
+	//Atributo coordenada de textura (s, t)
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(6 * sizeof(GLfloat)));
+	glEnableVertexAttribArray(2);
 
 	// Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice
 	// atualmente vinculado - para que depois possamos desvincular com segurança
@@ -335,22 +437,4 @@ GLuint loadTexture(string filePath, int &width, int &height)
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	return texID;
-}
-
-void drawTriangle(GLuint shaderID, GLuint VAO, vec3 position, vec3 dimensions, float angle, vec3 color, vec3 axis)
-{
-	// Matriz de modelo: transformações na geometria (objeto)
-	mat4 model = mat4(1); // matriz identidade
-	// Translação
-	model = translate(model, position);
-	// Rotação
-	model = rotate(model, radians(angle), axis);
-	// Escala
-	model = scale(model, dimensions);
-	glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
-
-	glUniform4f(glGetUniformLocation(shaderID, "inputColor"), color.r, color.g, color.b, 1.0f); // enviando cor para variável uniform inputColor
-																								//  Chamada de desenho - drawcall
-																								//  Poligono Preenchido - GL_TRIANGLES
-	glDrawArrays(GL_TRIANGLES, 0, 3);
 }
