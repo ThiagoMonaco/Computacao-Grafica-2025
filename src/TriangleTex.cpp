@@ -55,23 +55,26 @@ struct Cube {
 
 std::vector<Cube> cubes;
 int currentCube = 0;
-bool useTexture = false;
+bool useTexture = true; // Inicializa como true para mostrar a textura por padrão
 
 // Código fonte do Vertex Shader (em GLSL): ainda hardcoded
 const GLchar *vertexShaderSource = R"(
 #version 400
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 color;
-layout (location = 2) in vec2 texc;
+layout (location = 2) in vec2 tex_coord;
+
 uniform mat4 projection;
 uniform mat4 model;
+
 out vec3 finalColor;
 out vec2 texCoord;
+
 void main()
 {
-   	gl_Position = projection * model * vec4(position, 1.0);
-	finalColor = color;
-	texCoord = texc;
+    gl_Position = projection * model * vec4(position, 1.0);
+    finalColor = color;
+    texCoord = tex_coord;
 })";
 
 // Código fonte do Fragment Shader (em GLSL): ainda hardcoded
@@ -79,19 +82,25 @@ const GLchar *fragmentShaderSource = R"(
 #version 400
 in vec3 finalColor;
 in vec2 texCoord;
+
 uniform sampler2D texBuff;
 uniform bool useTexture;
+
 out vec4 color;
+
 void main()
 {
-	if(useTexture)
-	{
-		color = texture(texBuff, texCoord);
-	}
-	else
-	{
-		color = vec4(finalColor, 1.0);
-	}
+    if(useTexture)
+    {
+        vec4 texColor = texture(texBuff, texCoord);
+        if(texColor.a < 0.1)
+            discard;
+        color = texColor;
+    }
+    else
+    {
+        color = vec4(finalColor, 1.0);
+    }
 })";
 
 // Função MAIN
@@ -172,6 +181,10 @@ int main()
 		cubes[i].rotationY = 0.0f;
 		cubes[i].rotationZ = 0.0f;
 	}
+
+	// Habilita transparência
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
@@ -425,44 +438,50 @@ int setupGeometry()
 
 GLuint loadTexture(string filePath, int &width, int &height)
 {
-	GLuint texID; // id da textura a ser carregada
+    cout << "Tentando carregar textura: " << filePath << endl;
+    
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
 
-	// Gera o identificador da textura na memória
-	glGenTextures(1, &texID);
-	glBindTexture(GL_TEXTURE_2D, texID);
+    // Ajuste dos parâmetros de wrapping e filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-	// Ajuste dos parâmetros de wrapping e filtering
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    // Carregamento da imagem
+    int nrChannels;
+    stbi_set_flip_vertically_on_load(true); // Inverte a imagem no eixo y
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    unsigned char *data = stbi_load(filePath.c_str(), &width, &height, &nrChannels, 0);
 
-	// Carregamento da imagem usando a função stbi_load da biblioteca stb_image
-	int nrChannels;
+    if (data)
+    {
+        cout << "Textura carregada com sucesso!" << endl;
+        cout << "Dimensões: " << width << "x" << height << endl;
+        cout << "Canais: " << nrChannels << endl;
 
-	unsigned char *data = stbi_load(filePath.c_str(), &width, &height, &nrChannels, 0);
+        if (nrChannels == 3) // jpg, bmp
+        {
+            cout << "Formato: RGB" << endl;
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }
+        else
+        {
+            cout << "Formato: RGBA" << endl;
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        }
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        cout << "Falha ao carregar textura: " << filePath << endl;
+        cout << "Erro STB: " << stbi_failure_reason() << endl;
+    }
 
-	if (data)
-	{
-		if (nrChannels == 3) // jpg, bmp
-		{
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-		}
-		else // assume que é 4 canais png
-		{
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-		}
-		glGenerateMipmap(GL_TEXTURE_2D);
-	}
-	else
-	{
-		std::cout << "Failed to load texture " << filePath << std::endl;
-	}
+    stbi_image_free(data);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
-	stbi_image_free(data);
-
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	return texID;
+    return texID;
 }
